@@ -27,16 +27,28 @@ impl Log {
             ("Nov", 11),
             ("Dec", 12),
         ]);
-        let date: Vec<_> = self.time.split(['/', ':', '%']).collect();
-        let day: u32 = date[0].trim_matches('[').parse().unwrap();
-        let month = month_map.get(date[1]).unwrap().to_owned();
-        let year: u32 = date[2].parse().unwrap();
-        let hour: u32 = date[3].parse().unwrap();
-        let min: u32 = date[4].parse().unwrap();
-        let sec: u32 = date[5].parse().unwrap();
-        let ordered_date: Vec<u32> = Vec::from([year, month, day, hour, min, sec]);
-
-        return ordered_date;
+        let mut date: Vec<_> = self.time.split(['/', ':', '%']).collect();
+        date.pop();
+        let binding = month_map.get(date[1]).unwrap().to_string();
+        date[1] = binding.as_str();
+        let date: Vec<u32> = date
+            .iter()
+            .map(|x| x.trim_matches('['))
+            .map(|x| {
+                x.parse()
+                    .expect(&format!("Unable to parse into u32: {}", x))
+            })
+            .collect();
+        return date;
+    }
+    pub(crate) fn get_log_values(self) -> (String, String, String, String, (u16, String)) {
+        return (
+            self.ip,
+            self.client_id,
+            self.user_id,
+            self.request,
+            self.status_code,
+        );
     }
 }
 impl fmt::Display for Log {

@@ -2,7 +2,13 @@ use chrono::{DateTime, TimeZone, Utc};
 use indexmap::IndexMap;
 use log::Log;
 use status_code::StatusCode;
-use std::{collections::HashMap, fs::File, io::Read, path::Path, str};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::Read,
+    path::Path,
+    str,
+};
 
 pub(crate) mod log;
 pub(crate) mod log_data;
@@ -52,8 +58,7 @@ pub(crate) fn parse_log(log_contents: String) -> Vec<log::Log> {
         let log = make_log_parsable(log);
         let parsed_log: Vec<_> = log.split(" ").collect();
         let status_code: u16 = parsed_log[5].parse().unwrap();
-        let status_code = http_codes.get_key_value(&status_code).unwrap();
-        let status_code = (status_code.0.to_owned(), status_code.1.to_owned());
+        let (status_code, description) = http_codes.get_key_value(&status_code).unwrap();
         let byte_size: u64 = parsed_log[6].parse().unwrap();
         logs.push(log::Log {
             ip: parsed_log[0].to_string(),
@@ -61,7 +66,7 @@ pub(crate) fn parse_log(log_contents: String) -> Vec<log::Log> {
             user_id: parsed_log[2].to_string(),
             time: parsed_log[3].to_string(),
             request: parsed_log[4].to_string(),
-            status_code: status_code,
+            status_code: (status_code.to_owned(), description.to_owned()),
             size: byte_size,
         });
     }
@@ -71,7 +76,7 @@ pub(crate) fn parse_log(log_contents: String) -> Vec<log::Log> {
 /// Group logs by a specified time range i.e.seconds,minutes,hours,days,months and years.
 pub(crate) fn group_logs_by(range: &str, logs: Vec<log::Log>) -> IndexMap<String, Vec<log::Log>> {
     let mut log_by_hour: IndexMap<String, Vec<log::Log>> = IndexMap::new();
-    let range_to_index: HashMap<&str, u8> = HashMap::from([
+    let range_to_index: HashMap<&str, usize> = HashMap::from([
         ("sec", 5),
         ("min", 4),
         ("hour", 3),
@@ -84,10 +89,8 @@ pub(crate) fn group_logs_by(range: &str, logs: Vec<log::Log>) -> IndexMap<String
         let mut time_cat = String::new();
         let time = log.clone().get_parsed_date();
         for i in 0..time.len() {
-            let i: u8 = i as u8;
-
             if i <= range {
-                let mut time_add = time[i as usize].to_string();
+                let mut time_add = time[i].to_string();
                 time_add.push_str("|");
                 time_cat.push_str(&time_add);
             }
@@ -129,21 +132,30 @@ pub(crate) fn get_sessions(sec: i64, users: IndexMap<String, Vec<log::Log>>) -> 
 }
 /// Returns difference between two dates in seconds.
 pub(crate) fn time_difference(d1: Vec<u32>, d2: Vec<u32>) -> i64 {
-    let year1 = d1[0] as i32;
-    let year2 = d2[0] as i32;
+    let year1 = d1[2] as i32;
+    let year2 = d2[2] as i32;
     let dt1: DateTime<Utc> = Utc
-        .with_ymd_and_hms(year1, d1[1], d1[2], d1[3], d1[4], d1[5])
+        .with_ymd_and_hms(year1, d1[1], d1[0], d1[3], d1[4], d1[5])
         .unwrap();
     let dt2: DateTime<Utc> = Utc
-        .with_ymd_and_hms(year2, d2[1], d2[2], d2[3], d2[4], d2[5])
+        .with_ymd_and_hms(year2, d2[1], d2[0], d2[3], d2[4], d2[5])
         .unwrap();
     let difference = dt1.timestamp() - dt2.timestamp();
     return difference.abs();
 }
 
-// use chrono::{DateTime, TimeZone, Utc};
-// let dt: DateTime<Utc> = Utc.with_ymd_and_hms(2015, 5, 15, 0, 0, 0).unwrap();
-// assert_eq!(dt.timestamp(), 1431648000);
+pub(crate) fn remove_repeated_events(logs: Vec<Log>) -> Vec<Log> {
+    let mut repeat_set: HashSet<(String, String, String, String, (u16, String))> = HashSet::new();
+    let mut log_list: Vec<Log> = Vec::new();
+    for log in logs {
+        let log_values = &log.clone().get_log_values();
+        if !repeat_set.contains(log_values) {
+            log_list.push(log.clone());
+            repeat_set.insert(log_values.clone());
+        }
+    }
+    return log_list;
+}
 
 /// Count the amount of times a status code appears in logs
 pub(crate) fn count_status_code(logs: Vec<log::Log>) -> (IndexMap<u16, StatusCode>, u64, usize) {
@@ -163,7 +175,7 @@ pub(crate) fn count_status_code(logs: Vec<log::Log>) -> (IndexMap<u16, StatusCod
                 status_code,
                 StatusCode {
                     status_code: status_code,
-                    description: description,
+                    description: description.to_string(),
                     count: 1,
                     percent: 1.0 / log_count as f32 * 100.0,
                 },

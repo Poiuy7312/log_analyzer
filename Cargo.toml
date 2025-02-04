@@ -7,4 +7,4 @@ edition = "2021"
 indexmap = "2.7.1"
 chrono = "0.4.39"
 plotters = "0.3.7"
-ansi_term = "0.12.1" # or the latest version
+clap = { version = "4.5.18", features = ["derive"] }
