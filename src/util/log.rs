@@ -8,7 +8,7 @@ pub(crate) struct Log {
     pub(crate) time: String,
     pub(crate) request: String,
     pub(crate) status_code: (u16, String),
-    pub(crate) size: u64,
+    pub(crate) size: f64,
 }
 
 impl Log {
@@ -32,7 +32,7 @@ impl Log {
         let binding = month_map.get(date[1]).unwrap().to_string();
         date[1] = binding.as_str();
         let date: Vec<u32> = date
-            .iter()
+            .into_iter()
             .map(|x| x.trim_matches('['))
             .map(|x| {
                 x.parse()
@@ -41,16 +41,21 @@ impl Log {
             .collect();
         return date;
     }
-    pub(crate) fn get_log_values(self) -> (String, String, String, String, (u16, String)) {
-        return (
-            self.ip,
-            self.client_id,
-            self.user_id,
-            self.request,
-            self.status_code,
+    pub(super) fn get_values_string(self) -> String {
+        return format!(
+            "{},{},{},{},{}",
+            self.ip, self.client_id, self.user_id, self.status_code.0, self.size,
         );
     }
 }
+
+impl PartialEq for Log {
+    fn eq(&self, other: &Self) -> bool {
+        <Log as Clone>::clone(&self).get_values_string()
+            == <Log as Clone>::clone(&other).get_values_string()
+    }
+}
+
 impl fmt::Display for Log {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(

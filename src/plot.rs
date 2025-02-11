@@ -12,12 +12,12 @@ fn get_y_axis_range(data: &Vec<(f64, f64)>) -> f64 {
 
 pub(crate) fn plot_graph(
     x_range: f64,
-    data_type: String,
-    time: String,
+    y_axis: String,
+    x_axis: String,
     data_point: Vec<(f64, f64)>,
 ) {
     let y_range = get_y_axis_range(&data_point);
-    let root_area = BitMapBackend::new("images/2.7.png", (1400, 1000)).into_drawing_area();
+    let root_area = BitMapBackend::new("images/2.8.png", (1400, 1000)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
 
     let mut ctx = ChartBuilder::on(&root_area)
@@ -30,19 +30,19 @@ pub(crate) fn plot_graph(
     ctx.configure_mesh()
         .disable_x_mesh()
         .bold_line_style(WHITE.mix(0.3))
-        .y_desc(&data_type)
-        .x_desc(&time)
+        .y_desc(&y_axis)
+        .x_desc(&x_axis)
         .axis_desc_style(("sans-serif", 30))
         .draw()
         .unwrap();
 
     ctx.configure_mesh().draw().unwrap();
 
-    ctx.draw_series(data_point.iter().map(|point| Circle::new(*point, 1, &BLUE)))
+    ctx.draw_series(data_point.iter().map(|point| Circle::new(*point, 2, &BLUE)))
         .unwrap();
 
     ctx.draw_series(LineSeries::new(
-        data_point.iter().map(|point| (point.0, point.1)),
+        data_point.into_iter().map(|point| (point.0, point.1)),
         &BLUE,
     ))
     .unwrap();
