@@ -44,7 +44,7 @@ impl Log {
     pub(super) fn get_values_string(self) -> String {
         return format!(
             "{},{},{},{},{}",
-            self.ip, self.client_id, self.user_id, self.status_code.0, self.size,
+            self.ip, self.time, self.client_id, self.user_id, self.status_code.0,
         );
     }
 }

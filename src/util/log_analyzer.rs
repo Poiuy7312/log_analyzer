@@ -11,19 +11,6 @@ pub(crate) struct LogAnalyzer {
 }
 
 impl LogAnalyzer {
-    pub(crate) fn remove_repeats(mut self) -> Self {
-        let mut log_ids: Vec<String> = Vec::new();
-        let mut filtered_logs: Vec<Log> = Vec::new();
-        for log in self.logs {
-            if !log_ids.contains(&log.clone().get_values_string()) {
-                log_ids.push(log.clone().get_values_string());
-                filtered_logs.push(log)
-            }
-        }
-        self.logs = filtered_logs;
-        return self;
-    }
-
     /// Group the logs by a specified time and store the stats in as well
     fn group_logs_by(self, range: &str) -> IndexMap<String, Vec<Log>> {
         let mut log_by_hour: IndexMap<String, Vec<Log>> = IndexMap::new();

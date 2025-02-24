@@ -60,7 +60,7 @@ impl fmt::Display for LogData {
     // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
-            f,"Time(s): {}\nUser Count: {}\nSessions: {}\nTotal Bytes(mb): {}\nAvg Bytes(mb): {:.3}\nNumber of Logs: {}\nError Count: {}\nAvg time between Logs(s): {}\nAvg time between Errors(s): {}",
+            f,"Time: {}\nUser Count: {}\nSessions: {}\nTotal Bytes(mb): {}\nAvg Bytes(mb): {:.3}\nNumber of Logs: {}\nError Count: {}\nAvg time between Logs(s): {}\nAvg time between Errors(s): {}",
             self.time,self.users,self.sessions,self.total_bytes, self.avg_bytes, self.log_count, self.errors,self.atbl,self.atbe
         )
     }

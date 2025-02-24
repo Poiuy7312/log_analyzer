@@ -1,11 +1,19 @@
 use chrono::{TimeZone, Utc};
 use indexmap::IndexMap;
 use log::Log;
-use std::{collections::HashMap, f64::consts::E, fs::File, io::Read, path::Path, str};
+use std::{
+    collections::{HashMap, HashSet},
+    f64::consts::E,
+    fs::File,
+    io::Read,
+    path::Path,
+    str,
+};
 
 pub(super) mod log;
 pub(crate) mod log_analyzer;
 pub(super) mod log_data;
+pub(crate) mod models;
 
 pub(crate) fn get_byte_info(logs: Vec<Log>) -> (f64, f64) {
     let log_count = logs.len();
@@ -73,27 +81,29 @@ pub(crate) fn get_sessions(sec: f64, users: IndexMap<String, Vec<Vec<u32>>>) -> 
     return total_sessions;
 }
 
+/// Schneidewind model
 fn model(b: f64, t: f64) -> f64 {
     let one = 1.0 / (f64::powf(E, b) - 1.0);
     let two = t / (f64::powf(E, b * t) - 1.0);
     return one - two;
 }
 
+/// Derivative of Schneidewind model
 fn model_prime(b: f64, t: f64) -> f64 {
     let one = f64::powf(E, b) / f64::powi(f64::powf(E, b) - 1.0, 2);
     let two = f64::powi(t, 2) * f64::powf(E, b * t) / f64::powi(f64::powf(E, b * t) - 1.0, 2);
     return two - one;
 }
 
+/// Newton raphson method to find value of B
 pub(crate) fn newton_raphson(b: f64, t: f64, c: f64) -> f64 {
     let mut b = b;
     for _ in 0..100 {
         let f_val = model(b, t) - c;
         let f_deriv = model_prime(b, t);
         let new_b = b - f_val / f_deriv;
-        println!("{}", new_b);
 
-        if (new_b - b).abs() < 1e-4 {
+        if (new_b - b).abs() < 1e-6 {
             return new_b;
         }
         b = new_b;
@@ -101,6 +111,7 @@ pub(crate) fn newton_raphson(b: f64, t: f64, c: f64) -> f64 {
     return b;
 }
 
+/// Counts logs with errors and stores each error log in a vector.
 pub(crate) fn count_errors(logs: Vec<Log>) -> (u64, Vec<Log>) {
     let mut error_count = 0;
     let mut error_logs: Vec<Log> = Vec::new();
@@ -141,37 +152,49 @@ pub(crate) fn create_http_hashmap() -> HashMap<String, String> {
 /// Allows the logs to split by spaces and separate each part properly and stores them as a Log struct
 pub(crate) fn parse_log(log_contents: String) -> Vec<log::Log> {
     let http_codes: HashMap<String, String> = create_http_hashmap();
+    let mut current_logs: HashSet<String> = HashSet::new();
     let mut logs: Vec<log::Log> = Vec::new();
     let contents: Vec<_> = log_contents.lines().collect();
-
     for log in contents {
         let log = make_log_parsable(log.to_string());
         let parsed_log: Vec<String> = log.split(" ").map(|x| x.to_string()).collect();
-        let (status_code, description) = http_codes.get_key_value(&parsed_log[5]).unwrap();
-        let status_code = match status_code.parse::<u16>() {
-            Ok(x) => x,
-            Err(e) => {
-                println!("Error converting number: {}", e);
-                404
-            }
-        };
+        match parsed_log.len() {
+            9 => {
+                let (status_code, description) = http_codes.get_key_value(&parsed_log[5]).unwrap();
+                let status_code = match status_code.parse::<u16>() {
+                    Ok(x) => x,
+                    Err(e) => {
+                        println!("Error converting number: {}", e);
+                        404
+                    }
+                };
 
-        let byte_size = match parsed_log[6].parse::<f64>() {
-            Ok(x) => x / 1000.0,
-            Err(e) => {
-                println!("Error converting number: {}", e);
-                0.0
+                let byte_size = match parsed_log[6].parse::<f64>() {
+                    Ok(x) => x / 1000.0,
+                    Err(e) => {
+                        println!("Error converting number: {}", e);
+                        0.0
+                    }
+                };
+                let current_log = log::Log {
+                    ip: parsed_log[0].to_owned(),
+                    client_id: parsed_log[1].to_owned(),
+                    user_id: parsed_log[2].to_owned(),
+                    time: parsed_log[3].to_owned(),
+                    request: parsed_log[4].to_owned(),
+                    status_code: (status_code, description.to_owned()),
+                    size: byte_size,
+                };
+                // Makes sure redundant logs aren't added to log list
+                let value_string = current_log.clone().get_values_string();
+                if !current_logs.contains(&value_string) {
+                    logs.push(current_log);
+                    current_logs.insert(value_string);
+                }
             }
-        };
-        logs.push(log::Log {
-            ip: parsed_log[0].to_owned(),
-            client_id: parsed_log[1].to_owned(),
-            user_id: parsed_log[2].to_owned(),
-            time: parsed_log[3].to_owned(),
-            request: parsed_log[4].to_owned(),
-            status_code: (status_code, description.to_owned()),
-            size: byte_size,
-        });
+            // Skips if log is formatted incorrectly(Find a better way to handle this)
+            _ => continue,
+        }
     }
     return logs;
 }

@@ -1,14 +1,18 @@
-use std::{collections::HashMap, f64::consts::E, path::Path};
+use std::{
+    collections::HashMap,
+    f64::{self, consts::E},
+    path::Path,
+};
 
 use clap::Parser;
-use util::{log_analyzer::LogAnalyzer, newton_raphson, parse_log, read_file};
+use util::{log_analyzer::LogAnalyzer, log_data::LogData, models::*, parse_log, read_file};
 
 mod plot;
 mod util;
 
 #[derive(Parser)]
 struct Cli {
-    /// time|cumulative|ratio|
+    /// by|cumulative|curve|
     mode: String,
     /// errors|total_bytes|avg_bytes|sessions|hits|
     x_axis: String,
@@ -16,6 +20,45 @@ struct Cli {
     /// year|month|day|hour|min|sec|
     time: String,
 }
+
+enum MODE {
+    BY,
+    CUMULATIVE,
+    RATIO,
+    RATIOCUM,
+    NA,
+}
+
+/*fn get_curve(total_errors: f64, log_data_by_time: &Vec<LogData>, length: usize) -> Vec<(f64, f64)> /* , Vec<(f64, f64)>)*/
+{
+    let mut data_point: Vec<(f64, f64)> = Vec::new();
+    //let mut data_rate: Vec<(f64, f64)> = Vec::new();
+    let mut rate = 0.0;
+    for log in log_data_by_time {
+        let current_errors = log.errors as f64;
+        rate += log.time * current_errors / total_errors;
+    }
+    let mut starting_value = 0.1;
+    let mut b = f64::NAN;
+    while b.is_nan() {
+        b = newton_raphson(
+            starting_value,
+            log_data_by_time[length - 1].time as f64,
+            rate,
+        );
+        starting_value = f64::powi(starting_value, 10);
+    }
+    let a = b * total_errors / (1.0 - f64::powf(E, -b * log_data_by_time[length - 1].time as f64));
+
+    for i in 0..length {
+        let y = a / b * (1.0 - f64::powf(E, -b * log_data_by_time[i].time as f64));
+        //let y2 = a * f64::powf(E, -b * log_data_by_time[i].time);
+
+        data_point.push((log_data_by_time[i].time as f64, y));
+        //data_rate.push((log_data_by_time[i].time as f64, y2));
+    }
+    return data_point; //, data_rate);
+}*/
 
 fn main() {
     let args = Cli::parse();
@@ -35,134 +78,178 @@ fn main() {
     let log_data = LogAnalyzer {
         logs: log_data,
         time_multi: *time_multiplier.get(time).unwrap(),
-    }
-    .remove_repeats();
+    };
     let (log_data_by_time, total_log_data) = log_data.get_data(time);
+    println!("{}", total_log_data);
     let mut data_point: Vec<(f64, f64)> = Vec::new();
 
-    let mode = args.mode.trim();
-    let x_axis = args.x_axis.trim();
+    let mode = match args.mode.trim() {
+        "by" => MODE::BY,
+        "cumulative" => MODE::CUMULATIVE,
+        "ratio" => MODE::RATIO,
+        "ratio_cum" => MODE::RATIOCUM,
+        _ => MODE::NA,
+    };
+
+    let mut x_axis = args.x_axis.trim();
     let y_axis = args.y_axis.trim();
     //println!("{}", time);
-    match mode.trim() {
-        "time" => {
-            let total_time = total_log_data.time;
+    match mode {
+        MODE::BY => {
+            let length = &log_data_by_time.len();
+            let model = Models {
+                model: MODELTYPES::SCWIND,
+                total_errors: total_log_data.errors as f64,
+                log_data: log_data_by_time.clone(),
+                data_point: *length,
+            };
+            let (_, second_prime) = model.get_curve();
             // Move to different file later
             for data in log_data_by_time {
                 //println!("{:#?}\n", data);
-                let (x, y) = data.get_data_point("time", y_axis);
+                let (x, y) = data.get_data_point(x_axis, y_axis);
 
                 //println!("{:?}", (x, y));
                 data_point.push((x, y));
             }
-            // println!("{:#?}", data_point);
-            plot::plot_graph(
-                total_time * 1.1,
-                y_axis.to_owned(),
-                time.to_owned(),
-                data_point,
-            );
+            match x_axis.trim() {
+                "time" => {
+                    x_axis = time;
+                    plot::plot_double_graph(
+                        data_point[0].0,
+                        data_point.last().unwrap().0,
+                        y_axis.to_owned(),
+                        x_axis.to_owned(),
+                        data_point,
+                        second_prime,
+                    );
+                }
+                _ => {
+                    data_point.sort_by(|a, b| (a.0 as i64).cmp(&(b.0 as i64)));
+                    plot::plot_graph(
+                        data_point[0].0,
+                        data_point.last().unwrap().0,
+                        y_axis.to_owned(),
+                        x_axis.to_owned(),
+                        data_point,
+                    );
+                }
+            }
         }
 
-        "cumulative" => {
+        MODE::CUMULATIVE => {
             let mut count = vec![0.0, 0.0];
-            for data in log_data_by_time {
-                let (current_x, current_y) = data.get_data_point(x_axis, y_axis);
-                count[0] += current_x;
-                count[1] += current_y;
-                data_point.push((count[0], count[1] as f64));
+            let length = &log_data_by_time.len();
+            let model = Models {
+                model: MODELTYPES::SCWIND,
+                total_errors: total_log_data.errors as f64,
+                log_data: log_data_by_time.clone(),
+                data_point: *length,
+            };
+            let (mut second_point, _) = model.get_curve();
+            let mut index = 0 as usize;
+            for data in &log_data_by_time {
+                match x_axis.trim() {
+                    "time" => {
+                        let (current_x, current_y) =
+                            <LogData as Clone>::clone(&data).get_data_point("time", y_axis);
+                        second_point[index].0 = current_x;
+                        data_point.push((current_x, count[1] as f64));
+                        index += 1;
+                        count[1] += current_y;
+                    }
+                    _ => {
+                        let (current_x, current_y) =
+                            <LogData as Clone>::clone(&data).get_data_point(x_axis, y_axis);
+                        data_point.push((count[0], count[1] as f64));
+                        second_point[index].0 = count[0];
+                        count[0] += current_x;
+                        count[1] += current_y;
+                        index += 1;
+                    }
+                }
             }
-            plot::plot_graph(count[0], y_axis.to_string(), x_axis.to_string(), data_point);
-        }
-        "curve" => {
-            let total_errors = total_log_data.errors as f64;
-            let t = log_data_by_time.len();
-            let mut rate = 0.0;
-            let mut count = 1.0;
-            for log in &log_data_by_time {
-                let current_errors = log.errors as f64;
-                rate += count as f64 * current_errors / total_errors;
-                count += 1.0;
-            }
-
-            let b = newton_raphson(0.1, t as f64, rate);
-            let a = b * total_errors / (1.0 - f64::powf(E, -b * t as f64));
-            println!("{},{}", a, b);
-            for i in 0..t {
-                let y = a / b * (1.0 - f64::powf(E, -b * i as f64));
-
-                data_point.push((i as f64, y));
-            }
-            plot::plot_graph(
-                t as f64,
-                format!("Model"),
-                format!("Time Interval"),
+            plot::plot_double_graph(
+                data_point[0].0,
+                data_point.last().unwrap().0,
+                y_axis.to_owned(),
+                x_axis.to_owned(),
                 data_point,
+                second_point,
             );
         }
-        /*
-        let mut count = vec![0.0, 0.0];
-        let datatype = format!("errors/{}", data_type);
-        for (_, stats) in data {
-        count[0] =
-        stats.clone().get_data_type("errors") / stats.clone().get_data_type(&data_type);
-        let current_time = stats.time;
-        count[1] = current_time as f64 / total_time as f64;
-        data_point.push((count[1], count[0]));
-        }
-        plot::plot_graph(1.0, datatype, String::from("time/total time"), data_point);
-        }
-        "curve" => {
-        let mut count = vec![0.0, 0.0];
-        for (_, stats) in &data {
-        count[0] += stats.clone().get_data_type(&data_type);
-        count[1] += stats.clone().get_data_type("errors");
-        data_point.push((count[0], count[1] as f64));
-        }
-        let max = count[0].clone();
-        let x_avg = count[0] / data_point.len() as f64;
-        let y_avg = count[1] / data_point.len() as f64;
-        let mut numerator = 0.0;
-        let mut denominator = 0.0;
-        for data in &data_point {
-        numerator += (data.0 - x_avg) * (data.1 - y_avg);
-        denominator += f64::powi(data.0 - x_avg, 2);
-        }
-        let b = numerator / denominator;
-        data_point.clear();
+        MODE::RATIO => {
+            // Move to different file later
+            for data in log_data_by_time {
+                //println!("{:#?}\n", data);
+                let (x, mut y) = data.clone().get_data_point(x_axis, y_axis);
+                y = data.get_data("errors") / y;
 
-        for stats in data.values() {
-        let x = stats.clone().get_data_type(&data_type);
-        let y = total_errors * (1.0 - f64::powf(E, -b * x));
-        data_point.push((x, y));
+                //println!("{:?}", (x, y));
+                data_point.push((x, y));
+            }
+            let y_axis = format!("errors/{y_axis}");
+            match x_axis.trim() {
+                "time" => {
+                    x_axis = time;
+                    plot::plot_graph(
+                        data_point[0].0,
+                        data_point.last().unwrap().0,
+                        y_axis.to_owned(),
+                        x_axis.to_owned(),
+                        data_point,
+                    );
+                }
+                _ => {
+                    plot::plot_graph(
+                        data_point[0].0,
+                        data_point.last().unwrap().0,
+                        y_axis.to_owned(),
+                        x_axis.to_owned(),
+                        data_point,
+                    );
+                }
+            }
         }
+        MODE::RATIOCUM => {
+            let length = &log_data_by_time.len();
+            let mut count = vec![0.0, 0.0];
+            let model = Models {
+                model: MODELTYPES::SCWIND,
+                total_errors: total_log_data.errors as f64,
+                log_data: log_data_by_time.clone(),
+                data_point: *length,
+            };
+            let (mut second_point, second_prime) = model.get_curve();
+            let mut index = 0;
+            // Move to different file later
+            for data in &log_data_by_time {
+                //println!("{:#?}\n", data);
+                let (x, current_y) = data.clone().get_data_point("time", y_axis);
+                let y = <LogData as Clone>::clone(&data).get_data("errors");
+                println!("{}", second_point[index].1);
+                second_point[index].1 /= current_y;
+                println!("{}", second_point[index].1);
+                index += 1;
 
-        let mut b: f64 = 0.0;
-        let mut current_error_count = 0.0;
-        for i in 0..data.len() {
-        current_error_count += data[i].clone().get_data_type("errors");
-        b += (1.0 - (current_error_count / (total_errors * 1.5))).ln();
+                data_point.push((x, count[1] / current_y as f64));
+                count[1] += y;
+
+                //println!("{:?}", (x, y));
+            }
+            let y_axis = format!("errors/{y_axis}");
+            x_axis = time;
+            plot::plot_double_graph(
+                data_point[0].0,
+                data_point.last().unwrap().0,
+                y_axis.to_owned(),
+                x_axis.to_owned(),
+                data_point,
+                second_point,
+            );
         }
-        println!("{}", b);
-        let datatype = format!("errors/total error");
-        //let start =
-        //    data[0].clone().get_data_type("errors") / data[0].clone().get_data_type(&data_type);
-        //let last = data.last().unwrap().1;
-        //let last =
-        //  last.clone().get_data_type("errors") / last.clone().get_data_type(&data_type);
-        let total_data = get_total(&data_type, data.clone());
-        for (_, stats) in data {
-        let x = stats.clone().get_data_type(&data_type) / total_data;
-        let m = -b * x;
-        println!("{}", f64::powf(E, m));
-        let y = total_errors * (1.0 - f64::powf(E, m));
-        //let y = Decimal::from_f64_retain(f64::powf(E, m));
-        data_point.push((x, y));
-        println!("{:#?},{},{}", data_point, m, b);
-        println!("{}", x);
+        MODE::NA => {
+            println!("Invalid mode try again")
         }
-        //plot::plot_graph(max * 1.1, "errors".to_string(), data_type, data_point);
-         */
-        _ => {}
     }
 }
