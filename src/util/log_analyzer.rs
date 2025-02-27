@@ -13,7 +13,7 @@ pub(crate) struct LogAnalyzer {
 impl LogAnalyzer {
     /// Group the logs by a specified time and store the stats in as well
     fn group_logs_by(self, range: &str) -> IndexMap<String, Vec<Log>> {
-        let mut log_by_hour: IndexMap<String, Vec<Log>> = IndexMap::new();
+        let mut log_by_time: IndexMap<String, Vec<Log>> = IndexMap::new();
         let range_to_index: HashMap<&str, usize> = HashMap::from([
             ("sec", 6),
             ("min", 5),
@@ -34,14 +34,14 @@ impl LogAnalyzer {
                 .collect::<Vec<String>>()
                 .join("|");
             time_group.push_str(&time);
-            if let Some(v_log) = log_by_hour.get_mut(&time_group) {
+            if let Some(v_log) = log_by_time.get_mut(&time_group) {
                 v_log.push(log);
             } else {
-                log_by_hour.insert(time_group, Vec::from([log]));
+                log_by_time.insert(time_group, Vec::from([log]));
             }
         }
 
-        return log_by_hour;
+        return log_by_time;
     }
 
     fn get_total_data(self) -> LogData {
@@ -94,10 +94,8 @@ impl LogAnalyzer {
         let mut data: Vec<LogData> = Vec::new();
         for group in grouped_logs.values() {
             let log_count = group.len();
-            let time = time_difference(
-                start_time as f64,
-                to_time(&<log::Log as Clone>::clone(&group[0]).get_parsed_date()),
-            ) / self.time_multi as f64;
+            let time = time_difference(start_time as f64, get_avg_group_time(group.to_vec()))
+                / self.time_multi as f64;
             let (users, count) = get_users(group.to_vec());
             let sessions = get_sessions(7200.0, users);
             let (errors, error_logs) = count_errors(group.to_vec());

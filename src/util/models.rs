@@ -1,4 +1,4 @@
-use std::{arch::x86_64::_MM_FROUND_RAISE_EXC, f64::consts::E};
+use std::f64::consts::E;
 
 use crate::LogData;
 
@@ -24,9 +24,11 @@ impl Models {
         let rate = match self.model {
             MODELTYPES::SCWIND => {
                 let mut temp = 0.0;
+                let mut count = 1.0;
                 for log in &self.log_data {
                     let current_errors = log.errors as f64;
-                    temp += log.time * current_errors / self.total_errors;
+                    temp += count * current_errors / self.total_errors;
+                    count += 1.0;
                 }
                 temp
             }
@@ -40,15 +42,14 @@ impl Models {
         };
         let mut starting_value = 0.1;
         let mut b = f64::NAN;
-        let t = self.log_data.clone()[self.data_point - 1].time as f64;
+        let t = self.data_point as f64;
         while b.is_nan() {
             b = self.clone().newton_raphson(starting_value, t, rate);
             starting_value = f64::powi(starting_value, 10);
         }
         let a = match self.model {
             MODELTYPES::SCWIND => {
-                b * self.total_errors
-                    / (1.0 - f64::powf(E, -b * self.log_data[self.data_point - 1].time as f64))
+                b * self.total_errors / (1.0 - f64::powf(E, -b * self.data_point as f64))
             }
             MODELTYPES::GO => {
                 //self.data_point as f64 / (1.0 - f64::powf(E, -(b * self.total_errors)))
@@ -60,18 +61,18 @@ impl Models {
         for i in 0..self.data_point {
             let (y, y_prime) = match self.model {
                 MODELTYPES::SCWIND => (
-                    a / b * (1.0 - f64::powf(E, -b * self.log_data[i].time as f64)),
-                    a * f64::powf(E, -b * self.log_data[i].time),
+                    a / b * (1.0 - f64::powf(E, -b * (i + 1) as f64)),
+                    a * f64::powf(E, -b * (i + 1) as f64),
                 ),
                 MODELTYPES::GO => (
-                    a * (1.0 - f64::powf(E, -b * self.log_data[i].time as f64)),
-                    a * b * f64::powf(E, -b * self.log_data[i].time),
+                    a * (1.0 - f64::powf(E, -b * (i + 1) as f64)),
+                    a * b * f64::powf(E, -b * (i + 1) as f64),
                 ),
             };
             //let y2 = a * f64::powf(E, -b * log_data_by_time[i].time);
 
-            data_point.push((self.log_data[i].time as f64, y));
-            data_prime.push((self.log_data[i].time as f64, y_prime))
+            data_point.push((i as f64, y));
+            data_prime.push((i as f64, y_prime))
             //data_rate.push((log_data_by_time[i].time as f64, y2));
         }
         return (data_point, data_prime); //, data_rate);

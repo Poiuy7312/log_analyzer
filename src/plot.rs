@@ -1,5 +1,3 @@
-use std::cmp::max_by;
-
 use plotters::prelude::*;
 
 fn get_y_axis_range(data: &Vec<(f64, f64)>) -> f64 {

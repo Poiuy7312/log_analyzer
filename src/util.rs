@@ -4,7 +4,7 @@ use log::Log;
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::E,
-    fs::File,
+    fs::{read_to_string, File},
     io::Read,
     path::Path,
     str,
@@ -58,7 +58,7 @@ pub(crate) fn time_difference(d1: f64, d2: f64) -> f64 {
 
 pub(crate) fn to_time(d1: &Vec<u32>) -> f64 {
     let time: i64 = Utc
-        .with_ymd_and_hms(d1[2] as i32, d1[1], d1[0], d1[3], d1[4], d1[5])
+        .with_ymd_and_hms(d1[0] as i32, d1[1], d1[2], d1[3], d1[4], d1[5])
         .unwrap()
         .timestamp();
 
@@ -81,34 +81,14 @@ pub(crate) fn get_sessions(sec: f64, users: IndexMap<String, Vec<Vec<u32>>>) -> 
     return total_sessions;
 }
 
-/// Schneidewind model
-fn model(b: f64, t: f64) -> f64 {
-    let one = 1.0 / (f64::powf(E, b) - 1.0);
-    let two = t / (f64::powf(E, b * t) - 1.0);
-    return one - two;
-}
-
-/// Derivative of Schneidewind model
-fn model_prime(b: f64, t: f64) -> f64 {
-    let one = f64::powf(E, b) / f64::powi(f64::powf(E, b) - 1.0, 2);
-    let two = f64::powi(t, 2) * f64::powf(E, b * t) / f64::powi(f64::powf(E, b * t) - 1.0, 2);
-    return two - one;
-}
-
-/// Newton raphson method to find value of B
-pub(crate) fn newton_raphson(b: f64, t: f64, c: f64) -> f64 {
-    let mut b = b;
-    for _ in 0..100 {
-        let f_val = model(b, t) - c;
-        let f_deriv = model_prime(b, t);
-        let new_b = b - f_val / f_deriv;
-
-        if (new_b - b).abs() < 1e-6 {
-            return new_b;
-        }
-        b = new_b;
+pub(crate) fn get_avg_group_time(logs: Vec<Log>) -> f64 {
+    let mut total = 0.0;
+    let mut length = 0.0;
+    for log in logs {
+        total += to_time(&log.get_parsed_date());
+        length += 1.0;
     }
-    return b;
+    return total / length;
 }
 
 /// Counts logs with errors and stores each error log in a vector.
@@ -126,20 +106,23 @@ pub(crate) fn count_errors(logs: Vec<Log>) -> (u64, Vec<Log>) {
 }
 
 /// Takes path to a log file and reads and returns the results a String.
-pub(crate) fn read_file(log_file: &Path) -> String {
-    let mut file = File::open(log_file).expect("Unable to open file");
-    let mut contents = Vec::new();
-    file.read_to_end(&mut contents)
-        .expect("unable to read file");
-    let content = contents.as_slice();
-    return String::from_utf8_lossy(&content).to_string();
+pub(crate) fn read_directory(log_dir: &Path) -> String {
+    let mut log_contents = String::new();
+    for logs in log_dir.read_dir().expect("read call failed") {
+        if let Ok(logs) = logs {
+            let file = logs.path();
+            let contents = read_to_string(&file).expect("unable to read file");
+            log_contents += &contents;
+        }
+    }
+    return log_contents;
 }
 
 /// Creates a hashmap of all HTTP status codes
 pub(crate) fn create_http_hashmap() -> HashMap<String, String> {
     let mut code_map: HashMap<String, String> = HashMap::new();
-    let code_file = Path::new("src/data/http_codes.csv");
-    let codes = read_file(code_file);
+    let code_file = Path::new("src/data/");
+    let codes = read_directory(code_file);
     for code in codes.lines() {
         let v: Vec<_> = code.split(",").collect();
         let key = v[0];

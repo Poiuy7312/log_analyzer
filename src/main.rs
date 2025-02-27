@@ -1,13 +1,11 @@
-use std::{
-    collections::HashMap,
-    f64::{self, consts::E},
-    path::Path,
-};
+use core::time;
+use std::{collections::HashMap, path::Path};
 
 use clap::Parser;
-use util::{log_analyzer::LogAnalyzer, log_data::LogData, models::*, parse_log, read_file};
+use util::{log_analyzer::LogAnalyzer, log_data::LogData, models::*, parse_log, read_directory};
 
 mod plot;
+mod table;
 mod util;
 
 #[derive(Parser)]
@@ -63,8 +61,8 @@ enum MODE {
 fn main() {
     let args = Cli::parse();
     let time = args.time.trim();
-    let log_file = Path::new("poems.com - SSL Log (1).log");
-    let log_contents = read_file(log_file);
+    let log_file = Path::new("logs/");
+    let log_contents = read_directory(log_file);
     let time_multiplier: HashMap<String, i64> = HashMap::from([
         ("year".to_string(), 31556952),
         ("month".to_string(), 2629800),
@@ -79,7 +77,8 @@ fn main() {
         logs: log_data,
         time_multi: *time_multiplier.get(time).unwrap(),
     };
-    let (log_data_by_time, total_log_data) = log_data.get_data(time);
+    let (mut log_data_by_time, total_log_data) = log_data.get_data(time);
+    log_data_by_time.sort_by(|a, b| (a.time as i64).cmp(&(b.time as i64).clone()));
     println!("{}", total_log_data);
     let mut data_point: Vec<(f64, f64)> = Vec::new();
 
@@ -105,36 +104,38 @@ fn main() {
             };
             let (_, second_prime) = model.get_curve();
             // Move to different file later
-            for data in log_data_by_time {
-                //println!("{:#?}\n", data);
-                let (x, y) = data.get_data_point(x_axis, y_axis);
-
-                //println!("{:?}", (x, y));
-                data_point.push((x, y));
-            }
             match x_axis.trim() {
                 "time" => {
+                    let mut index = 0.0;
+                    for data in log_data_by_time {
+                        //println!("{:#?}\n", data);
+                        let (_, y) = data.get_data_point(x_axis, y_axis);
+
+                        //println!("{:?}", (x, y));
+                        data_point.push((index, y));
+                        index += 1.0
+                    }
+
                     x_axis = time;
-                    plot::plot_double_graph(
-                        data_point[0].0,
-                        data_point.last().unwrap().0,
-                        y_axis.to_owned(),
-                        x_axis.to_owned(),
-                        data_point,
-                        second_prime,
-                    );
                 }
                 _ => {
-                    data_point.sort_by(|a, b| (a.0 as i64).cmp(&(b.0 as i64)));
-                    plot::plot_graph(
-                        data_point[0].0,
-                        data_point.last().unwrap().0,
-                        y_axis.to_owned(),
-                        x_axis.to_owned(),
-                        data_point,
-                    );
+                    for data in log_data_by_time {
+                        //println!("{:#?}\n", data);
+                        let (x, y) = data.get_data_point(x_axis, y_axis);
+
+                        //println!("{:?}", (x, y));
+                        data_point.push((x, y));
+                    }
                 }
             }
+            plot::plot_double_graph(
+                data_point[0].0,
+                data_point.last().unwrap().0,
+                y_axis.to_owned(),
+                x_axis.to_owned(),
+                data_point,
+                second_prime,
+            );
         }
 
         MODE::CUMULATIVE => {
@@ -151,10 +152,10 @@ fn main() {
             for data in &log_data_by_time {
                 match x_axis.trim() {
                     "time" => {
-                        let (current_x, current_y) =
+                        let (_, current_y) =
                             <LogData as Clone>::clone(&data).get_data_point("time", y_axis);
-                        second_point[index].0 = current_x;
-                        data_point.push((current_x, count[1] as f64));
+                        second_point[index].0 = index as f64;
+                        data_point.push((index as f64, count[1] as f64));
                         index += 1;
                         count[1] += current_y;
                     }
@@ -169,6 +170,10 @@ fn main() {
                     }
                 }
             }
+            if x_axis.trim() == "time" {
+                x_axis = time;
+            }
+            table::get_line_similarity(&data_point, &second_point);
             plot::plot_double_graph(
                 data_point[0].0,
                 data_point.last().unwrap().0,
@@ -220,19 +225,18 @@ fn main() {
                 log_data: log_data_by_time.clone(),
                 data_point: *length,
             };
-            let (mut second_point, second_prime) = model.get_curve();
+            let (mut second_point, _) = model.get_curve();
             let mut index = 0;
             // Move to different file later
             for data in &log_data_by_time {
                 //println!("{:#?}\n", data);
-                let (x, current_y) = data.clone().get_data_point("time", y_axis);
+                let (_, current_y) = data.clone().get_data_point("time", y_axis);
                 let y = <LogData as Clone>::clone(&data).get_data("errors");
-                println!("{}", second_point[index].1);
+                second_point[index].0 = index as f64;
                 second_point[index].1 /= current_y;
-                println!("{}", second_point[index].1);
-                index += 1;
 
-                data_point.push((x, count[1] / current_y as f64));
+                data_point.push((index as f64, count[1] / current_y as f64));
+                index += 1;
                 count[1] += y;
 
                 //println!("{:?}", (x, y));

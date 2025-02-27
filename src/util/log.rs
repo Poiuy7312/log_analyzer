@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt, str};
 
+use chrono::{TimeZone, Utc};
+
 #[derive(Clone, Debug)]
 pub(crate) struct Log {
     pub(crate) ip: String,
@@ -31,7 +33,7 @@ impl Log {
         date.pop();
         let binding = month_map.get(date[1]).unwrap().to_string();
         date[1] = binding.as_str();
-        let date: Vec<u32> = date
+        let mut date: Vec<u32> = date
             .into_iter()
             .map(|x| x.trim_matches('['))
             .map(|x| {
@@ -39,13 +41,26 @@ impl Log {
                     .expect(&format!("Unable to parse into u32: {}", x))
             })
             .collect();
+        let (year, day) = (date[2], date[0]);
+        date[2] = day;
+        date[0] = year;
         return date;
     }
+
     pub(super) fn get_values_string(self) -> String {
         return format!(
             "{},{},{},{},{}",
             self.ip, self.time, self.client_id, self.user_id, self.status_code.0,
         );
+    }
+    pub(super) fn utc_time(self) -> i64 {
+        let d1 = self.get_parsed_date();
+        let time = Utc
+            .with_ymd_and_hms(d1[0] as i32, d1[1], d1[2], d1[3], d1[4], d1[5])
+            .unwrap()
+            .timestamp();
+
+        return time;
     }
 }
 
