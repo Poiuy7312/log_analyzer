@@ -3,9 +3,7 @@ use indexmap::IndexMap;
 use log::Log;
 use std::{
     collections::{HashMap, HashSet},
-    f64::consts::E,
-    fs::{read_to_string, File},
-    io::Read,
+    fs::read_to_string,
     path::Path,
     str,
 };
