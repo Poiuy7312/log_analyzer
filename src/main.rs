@@ -1,62 +1,27 @@
-use core::time;
 use std::{collections::HashMap, path::Path};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use util::{log_analyzer::LogAnalyzer, log_data::LogData, models::*, parse_log, read_directory};
 
 mod plot;
 mod table;
 mod util;
 
+/// Handles Commands for specifying graphs to be generated
 #[derive(Parser)]
 struct Cli {
-    /// by|cumulative|curve|
-    mode: String,
-    /// errors|total_bytes|avg_bytes|sessions|hits|
-    x_axis: String,
-    y_axis: String,
-    /// year|month|day|hour|min|sec|
+    #[command(subcommand)]
+    cmd: Commands,
     time: String,
 }
 
-enum MODE {
-    BY,
-    CUMULATIVE,
-    RATIO,
-    RATIOCUM,
-    NA,
+#[derive(Subcommand, Debug, Clone)]
+enum Commands {
+    By { x_axis: String, y_axis: String },
+    Cumulative { x_axis: String, y_axis: String },
+    Ratio { x_axis: String, y_axis: String },
+    CumulativeRatio { y_axis: String },
 }
-
-/*fn get_curve(total_errors: f64, log_data_by_time: &Vec<LogData>, length: usize) -> Vec<(f64, f64)> /* , Vec<(f64, f64)>)*/
-{
-    let mut data_point: Vec<(f64, f64)> = Vec::new();
-    //let mut data_rate: Vec<(f64, f64)> = Vec::new();
-    let mut rate = 0.0;
-    for log in log_data_by_time {
-        let current_errors = log.errors as f64;
-        rate += log.time * current_errors / total_errors;
-    }
-    let mut starting_value = 0.1;
-    let mut b = f64::NAN;
-    while b.is_nan() {
-        b = newton_raphson(
-            starting_value,
-            log_data_by_time[length - 1].time as f64,
-            rate,
-        );
-        starting_value = f64::powi(starting_value, 10);
-    }
-    let a = b * total_errors / (1.0 - f64::powf(E, -b * log_data_by_time[length - 1].time as f64));
-
-    for i in 0..length {
-        let y = a / b * (1.0 - f64::powf(E, -b * log_data_by_time[i].time as f64));
-        //let y2 = a * f64::powf(E, -b * log_data_by_time[i].time);
-
-        data_point.push((log_data_by_time[i].time as f64, y));
-        //data_rate.push((log_data_by_time[i].time as f64, y2));
-    }
-    return data_point; //, data_rate);
-}*/
 
 fn main() {
     let args = Cli::parse();
@@ -81,20 +46,9 @@ fn main() {
     log_data_by_time.sort_by(|a, b| (a.time as i64).cmp(&(b.time as i64).clone()));
     println!("{}", total_log_data);
     let mut data_point: Vec<(f64, f64)> = Vec::new();
-
-    let mode = match args.mode.trim() {
-        "by" => MODE::BY,
-        "cumulative" => MODE::CUMULATIVE,
-        "ratio" => MODE::RATIO,
-        "ratio_cum" => MODE::RATIOCUM,
-        _ => MODE::NA,
-    };
-
-    let mut x_axis = args.x_axis.trim();
-    let y_axis = args.y_axis.trim();
     //println!("{}", time);
-    match mode {
-        MODE::BY => {
+    match args.cmd {
+        Commands::By { mut x_axis, y_axis } => {
             let length = &log_data_by_time.len();
             let model = Models {
                 model: MODELTYPES::SCWIND,
@@ -109,19 +63,19 @@ fn main() {
                     let mut index = 0.0;
                     for data in log_data_by_time {
                         //println!("{:#?}\n", data);
-                        let (_, y) = data.get_data_point(x_axis, y_axis);
+                        let (_, y) = data.get_data_point(&x_axis, &y_axis);
 
                         //println!("{:?}", (x, y));
                         data_point.push((index, y));
                         index += 1.0
                     }
 
-                    x_axis = time;
+                    x_axis = time.to_string();
                 }
                 _ => {
                     for data in log_data_by_time {
                         //println!("{:#?}\n", data);
-                        let (x, y) = data.get_data_point(x_axis, y_axis);
+                        let (x, y) = data.get_data_point(&x_axis, &y_axis);
 
                         //println!("{:?}", (x, y));
                         data_point.push((x, y));
@@ -138,7 +92,7 @@ fn main() {
             );
         }
 
-        MODE::CUMULATIVE => {
+        Commands::Cumulative { mut x_axis, y_axis } => {
             let mut count = vec![0.0, 0.0];
             let length = &log_data_by_time.len();
             let model = Models {
@@ -152,16 +106,16 @@ fn main() {
             for data in &log_data_by_time {
                 match x_axis.trim() {
                     "time" => {
-                        let (_, current_y) =
-                            <LogData as Clone>::clone(&data).get_data_point("time", y_axis);
-                        second_point[index].0 = index as f64;
-                        data_point.push((index as f64, count[1] as f64));
+                        let (current_x, current_y) =
+                            <LogData as Clone>::clone(&data).get_data_point("time", &y_axis);
+                        second_point[index].0 = current_x;
+                        data_point.push((current_x, count[1] as f64));
                         index += 1;
                         count[1] += current_y;
                     }
                     _ => {
                         let (current_x, current_y) =
-                            <LogData as Clone>::clone(&data).get_data_point(x_axis, y_axis);
+                            <LogData as Clone>::clone(&data).get_data_point(&x_axis, &y_axis);
                         data_point.push((count[0], count[1] as f64));
                         second_point[index].0 = count[0];
                         count[0] += current_x;
@@ -171,7 +125,7 @@ fn main() {
                 }
             }
             if x_axis.trim() == "time" {
-                x_axis = time;
+                x_axis = time.to_string();
             }
             table::get_line_similarity(&data_point, &second_point);
             plot::plot_double_graph(
@@ -183,11 +137,11 @@ fn main() {
                 second_point,
             );
         }
-        MODE::RATIO => {
+        Commands::Ratio { mut x_axis, y_axis } => {
             // Move to different file later
             for data in log_data_by_time {
                 //println!("{:#?}\n", data);
-                let (x, mut y) = data.clone().get_data_point(x_axis, y_axis);
+                let (x, mut y) = data.clone().get_data_point(&x_axis, &y_axis);
                 y = data.get_data("errors") / y;
 
                 //println!("{:?}", (x, y));
@@ -196,7 +150,7 @@ fn main() {
             let y_axis = format!("errors/{y_axis}");
             match x_axis.trim() {
                 "time" => {
-                    x_axis = time;
+                    x_axis = time.to_string();
                     plot::plot_graph(
                         data_point[0].0,
                         data_point.last().unwrap().0,
@@ -216,7 +170,7 @@ fn main() {
                 }
             }
         }
-        MODE::RATIOCUM => {
+        Commands::CumulativeRatio { y_axis } => {
             let length = &log_data_by_time.len();
             let mut count = vec![0.0, 0.0];
             let model = Models {
@@ -230,30 +184,27 @@ fn main() {
             // Move to different file later
             for data in &log_data_by_time {
                 //println!("{:#?}\n", data);
-                let (_, current_y) = data.clone().get_data_point("time", y_axis);
+                let (current_x, current_y) = data.clone().get_data_point("time", &y_axis);
                 let y = <LogData as Clone>::clone(&data).get_data("errors");
-                second_point[index].0 = index as f64;
-                second_point[index].1 /= current_y;
+                second_point[index].0 = current_x;
+                second_point[index].1 = second_point[index].1 / current_y;
 
-                data_point.push((index as f64, count[1] / current_y as f64));
+                data_point.push((current_x, count[1] / current_y as f64));
                 index += 1;
                 count[1] += y;
 
                 //println!("{:?}", (x, y));
             }
             let y_axis = format!("errors/{y_axis}");
-            x_axis = time;
+            //table::get_line_similarity(&data_point, &second_point);
             plot::plot_double_graph(
                 data_point[0].0,
                 data_point.last().unwrap().0,
                 y_axis.to_owned(),
-                x_axis.to_owned(),
+                time.to_string(),
                 data_point,
                 second_point,
             );
-        }
-        MODE::NA => {
-            println!("Invalid mode try again")
         }
     }
 }
