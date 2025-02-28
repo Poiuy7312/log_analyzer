@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt, str};
 
-use chrono::{TimeZone, Utc};
+// use chrono::{TimeZone, Utc};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Log {
@@ -15,6 +15,7 @@ pub(crate) struct Log {
 
 impl Log {
     pub(crate) fn get_parsed_date(self) -> Vec<u32> {
+        // Turn month into associated number
         let month_map: HashMap<&str, u32> = HashMap::from([
             ("Jan", 1),
             ("Feb", 2),
@@ -53,6 +54,7 @@ impl Log {
             self.ip, self.time, self.client_id, self.user_id, self.status_code.0,
         );
     }
+    /* Deprecated
     pub(super) fn utc_time(self) -> i64 {
         let d1 = self.get_parsed_date();
         let time = Utc
@@ -61,7 +63,7 @@ impl Log {
             .timestamp();
 
         return time;
-    }
+    }*/
 }
 
 impl PartialEq for Log {
